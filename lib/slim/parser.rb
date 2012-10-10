@@ -46,7 +46,7 @@ module Slim
                        end
       end
       shortcut = "[#{Regexp.escape @shortcut.keys.join}]"
-      @shortcut_regex = /\A(#{shortcut})(\w[\w-]*\w|\w+)/
+      @shortcut_regex = /\A(#{shortcut})([\w+-][\w-]*\w|\w+)/
       @tag_regex = /\A(?:#{shortcut}|\*(?=[^\s]+)|(\w[\w:-]*\w|\w+))/
     end
 
@@ -118,6 +118,7 @@ module Slim
       # We uses this information to figure out how many steps we must "jump"
       # out when we see an de-indented line.
       @indents = [0]
+      @base_classes = [nil]
 
       # Whenever we want to output something, we'll *always* output it to the
       # last stack in this array. So when there's a line that expects
@@ -168,6 +169,7 @@ module Slim
         syntax_error!('Unexpected indentation') unless expecting_indentation
 
         @indents << indent
+        @base_classes << nil
       else
         # This line was *not* indented more than the line before,
         # so we'll just forget about the stack that the previous line pushed.
@@ -178,6 +180,7 @@ module Slim
         # how many levels we've deindented.
         while indent < @indents.last
           @indents.pop
+          @base_classes.pop
           @stacks.pop
         end
 
@@ -353,8 +356,22 @@ module Slim
       while @line =~ @shortcut_regex
         # The class/id attribute is :static instead of :slim :interpolate,
         # because we don't want text interpolation in .class or #id shortcut
-        attributes << [:html, :attr, @shortcut[$1][1], [:static, $2]]
-        @line = $'
+        next_part = $'
+        attribute_name = @shortcut[$1][1]
+        value = $2
+        if attribute_name  == 'class'
+          if value.start_with?("+-")
+            value = [@base_classes.compact.last, value.gsub(/^\+-/, "")].compact.join("_")
+            @base_classes[-1] = value
+          elsif value.start_with?("+")
+            value = value.gsub(/^\+/, "")
+            @base_classes[-1] = value
+          elsif value.start_with?("-")
+            value = [@base_classes.compact.last, value.gsub(/^-/, "")].compact.join("_")
+          end
+        end
+        attributes << [:html, :attr, attribute_name, [:static, value]]
+        @line = next_part
       end
 
       # Check to see if there is a delimiter right after the tag name
